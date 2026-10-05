@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MLOps Checking Agent</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+        }
+        .form-container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        input[type="text"], select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .results {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: none;
+        }
+        .score {
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .score.good { background-color: #d4edda; color: #155724; }
+        .score.warning { background-color: #fff3cd; color: #856404; }
+        .score.critical { background-color: #f8d7da; color: #721c24; }
+        .issue {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border-left: 4px solid;
+        }
+        .issue.critical {
+            background-color: #f8d7da;
+            border-left-color: #dc3545;
+            color: #721c24;
+        }
+        .issue.warning {
+            background-color: #fff3cd;
+            border-left-color: #ffc107;
+            color: #856404;
+        }
+        .issue.info {
+            background-color: #d1ecf1;
+            border-left-color: #17a2b8;
+            color: #0c5460;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            display: none;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1> MLOps Checking Agent</h1>
+        <p>Analyze your ML projects for deployment readiness</p>
+    </div>
+
+    <div class="form-container">
+        <form id="checkForm">
+            <div class="input-group">
+                <label for="directory">Project Directory Path:</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="directory" name="directory"
+                           placeholder="C:c/Users/Wihed/Documents/projects/agent" required
+                           style="flex: 1;">
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label for="checks">Check Types:</label>
+                <select id="checks" name="checks">
+                    <option value="all">All Checks</option>
+                    <option value="dependencies">Dependencies Only</option>
+                    <option value="security">Security Only</option>
+                    <option value="structure">Structure Only</option>
+                    <option value="deployment">Deployment Only</option>
+                </select>
+            </div>
+
+            <div class="input-group">
+                <label>
+                    <input type="checkbox" id="useAI" name="useAI">
+                    🤖 Enable AI Agent Analysis
+                </label>
+                <small style="color: #666; font-size: 12px;">
+                    Requires OpenRouter API key. Provides intelligent insights and fix plans.
+                </small>
+            </div>
+
+            <div class="input-group" id="apiKeyGroup" style="display: none;">
+                <label for="apiKey">OpenRouter API Key (optional):</label>
+                <input type="password" id="apiKey" name="apiKey"
+                       placeholder="sk-... (uses OPENROUTER_API_KEY env var if not provided)">
+                <small style="color: #666; font-size: 12px;">
+                    Your API key is never stored. Uses environment variable if blank.
+                </small>
+            </div>
+
+            <button type="submit" class="btn" id="submitBtn">🔍 Analyze Project</button>
+        </form>
+    </div>
+
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>Analyzing your project...</p>
+    </div>
+
+    <div class="results" id="results">
+        <h2>📊 Analysis Results</h2>
+        <div id="resultsContent"></div>
+    </div>
+
+    <script>
+        document.getElementById('checkForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            let directory = document.getElementById('directory').value;
+            const checks = document.getElementById('checks').value;
+            const useAI = document.getElementById('useAI').checked;
+            const apiKey = document.getElementById('apiKey').value;
+            const submitBtn = document.getElementById('submitBtn');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+
+            // Show loading
+            submitBtn.disabled = true;
+            loading.style.display = 'block';
+            results.style.display = 'none';
+
+            try {
+                const response = await fetch('/check', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        directory_path: directory,
+                        checks: checks === 'all' ? ['all'] : [checks],
+                        use_ai: useAI,
+                        openai_api_key: apiKey || null
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayResults(data);
+                } else {
+                    displayError(data.detail || 'Analysis failed');
+                }
+
+            } catch (error) {
+                displayError('Network error: ' + error.message);
+            } finally {
+                submitBtn.disabled = false;
+                loading.style.display = 'none';
+                results.style.display = 'block';
+            }
+        });
+
+        function displayResults(data) {
+            const scoreClass = data.deployment_readiness >= 80 ? 'good' :
+                             data.deployment_readiness >= 60 ? 'warning' : 'critical';
+
+            let html = `
+                <div class="score ${scoreClass}">
+                     Deployment Readiness: ${data.deployment_readiness}/100
+                </div>
+
+                <p><strong> Directory:</strong> ${data.directory}</p>
+                <p><strong> Issues Found:</strong> ${data.issues.length}</p>
+            `;
+
+            if (data.issues.length > 0) {
+                html += '<h3>Issues:</h3>';
+                data.issues.forEach(issue => {
+                    html += `
+                        <div class="issue ${issue.severity}">
+                            <strong>[${issue.category.toUpperCase()}]</strong> ${issue.message}
+                            ${issue.file_path ? `<br>📍 ${issue.file_path}${issue.line_number ? ':' + issue.line_number : ''}` : ''}
+                        </div>
+                    `;
+                });
+            }
+
+            if (data.recommendations.length > 0) {
+                html += '<h3>💡 Recommendations:</h3><ul>';
+                data.recommendations.forEach(rec => {
+                    html += `<li>${rec}</li>`;
+                });
+                html += '</ul>';
+            }
+
+            // Display AI insights if available
+            if (data.ai_insights && data.ai_insights.length > 0) {
+                html += '<h3> AI Insights:</h3>';
+                data.ai_insights.forEach(insight => {
+                    html += `<div class="issue info">${insight}</div>`;
+                });
+            }
+
+            // Display AI fix plan if available
+            if (data.fix_plan && data.fix_plan.length > 0) {
+                html += '<h3>🛠️ AI-Generated Fix Plan:</h3>';
+                data.fix_plan.forEach(step => {
+                    const priorityColor = step.priority === 'high' ? 'critical' : step.priority === 'medium' ? 'warning' : 'info';
+                    html += `
+                        <div class="issue ${priorityColor}">
+                            <strong>Step ${step.step} (${step.priority} priority):</strong> ${step.action}
+                            ${step.files_affected ? `<br>📁 Files: ${step.files_affected.join(', ')}` : ''}
+                            ${step.estimated_minutes ? `<br>⏱️ Estimated time: ${step.estimated_minutes} minutes` : ''}
+                        </div>
+                    `;
+                });
+            }
+
+            document.getElementById('resultsContent').innerHTML = html;
+        }
+
+        function displayError(message) {
+            document.getElementById('resultsContent').innerHTML = `
+                <div class="issue critical">
+                    <strong> Error:</strong> ${message}
+                </div>
+            `;
+        }
+
+        
+
+        // Show/hide API key field based on AI checkbox
+        document.getElementById('useAI').addEventListener('change', function() {
+            const apiKeyGroup = document.getElementById('apiKeyGroup');
+            apiKeyGroup.style.display = this.checked ? 'block' : 'none';
+        });
+    </script>
+</body>
+</html>
